@@ -1,6 +1,7 @@
 #include "entity.hpp"
 #include "game.hpp"
 #include "level.hpp"
+#include "projection.hpp"
 #include "sprite3d.hpp"
 #include "../engine_config.hpp"
 #include ENGINE_LCD_INCLUDE
@@ -368,9 +369,10 @@ int Level::projectionProject(const Vector triangle[3], float width, float height
     for (int i = 0; i < count; ++i)
     {
         const Vector &vertex = input[i];
-        const float scale = height / (vertex.z < 0.1f ? 0.1f : vertex.z);
-        output[i] = Vector(projectionBound(vertex.x * scale + half_width, width - 1),
-                           projectionBound(-vertex.y * scale + half_height, height - 1));
+        float x, y;
+        projectPoint(vertex.x, vertex.y, vertex.z < 0.1f ? 0.1f : vertex.z,
+                     half_width, half_height, height, x, y);
+        output[i] = Vector(projectionBound(x, width - 1), projectionBound(y, height - 1));
     }
     return count;
 }
