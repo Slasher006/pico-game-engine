@@ -72,6 +72,12 @@ public:
     float sprite_rotation;       // Rotation of the 3D sprite
     float sprite_scale;          // Scale factor for the 3D sprite
 
+    const Image *billboard = nullptr;
+    uint32_t billboardFrame = 0;
+    uint32_t billboardElapsed = 0;
+    void advanceBillboard(uint32_t elapsedMs, uint32_t frameMs = 125);
+    bool setBillboard(const Image *asset);
+
     /*
         Additional properties an entity may have.
         These are not controlled by the engine.

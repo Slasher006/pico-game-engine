@@ -1,4 +1,5 @@
 #include "image.hpp"
+#include <math.h>
 
 #include ENGINE_MEM_INCLUDE
 
@@ -9,6 +10,34 @@
 #ifdef ENGINE_LOG_INCLUDE
 #include ENGINE_LOG_INCLUDE
 #endif
+
+bool Image::getBillboardFrame(uint32_t frame, uint8_t view, const uint8_t *&pixels,
+                             const uint8_t *&mask) const
+{
+    pixels = mask = nullptr;
+    if (!isBillboard() || frame >= billboardFrames || view >= billboardViewCount)
+        return false;
+    const size_t count = size_t(size.x) * size_t(size.y);
+    const size_t index = size_t(frame) * billboardViewCount + view;
+    pixels = billboardPixels ? billboardPixels[index] : static_cast<const uint8_t *>(data) + index * count * 2;
+    mask = billboardMasks ? billboardMasks[index] : billboardMask + index * ((count + 7) / 8);
+    if (!pixels || !mask)
+    {
+        pixels = mask = nullptr;
+        return false;
+    }
+    return true;
+}
+
+uint8_t Image::getBillboardView(float facingX, float facingY, float toCameraX, float toCameraY)
+{
+    if (!isfinite(facingX) || !isfinite(facingY) || !isfinite(toCameraX) || !isfinite(toCameraY))
+        return 0;
+    const float facing = (facingX == 0 && facingY == 0) ? 0 : atan2f(facingY, facingX);
+    const float angle = atan2f(toCameraY, toCameraX) - facing;
+    const int bucket = int(floorf(angle * (4.0f / 3.14159265358979323846f) + 0.5f));
+    return uint8_t((bucket % 8 + 8) % 8);
+}
 
 bool Image::getData(void *buffer, size_t buffer_size)
 {
@@ -36,6 +65,16 @@ bool Image::getData(void *buffer, size_t buffer_size)
 #else
     return false;
 #endif
+}
+
+bool Image::isBillboard() const
+{
+    if ((!billboardPixels && !data) || is_8bit || (!billboardMasks && !billboardMask) || !billboardFrames ||
+        !isfinite(size.x) || !isfinite(size.y) || size.x < 1 || size.y < 1 ||
+        size.x > 1024 || size.y > 1024 || floorf(size.x) != size.x || floorf(size.y) != size.y)
+        return false;
+    const size_t frameBytes = size_t(size.x) * size_t(size.y) * 2 * billboardViewCount;
+    return billboardFrames <= SIZE_MAX / frameBytes;
 }
 
 void Image::render(Draw *draw, const Vector &position)
@@ -118,4 +157,35 @@ void Image::render(Draw *draw, int16_t x, int16_t y)
             ENGINE_MEM_FREE(data_buffer);
         }
     }
+}
+
+bool Image::setBillboard(const uint8_t *mask, uint32_t frames)
+{
+    Image candidate = *this;
+    candidate.billboardPixels = candidate.billboardMasks = nullptr;
+    candidate.billboardMask = mask;
+    candidate.billboardFrames = frames;
+    if (!candidate.isBillboard())
+        return false;
+    *this = candidate;
+    return true;
+}
+
+bool Image::setBillboardFrames(const uint8_t *const *pixels, const uint8_t *const *masks,
+                               uint32_t frames)
+{
+    if (!pixels || !masks || !frames || frames > SIZE_MAX / billboardViewCount / sizeof(*pixels))
+        return false;
+    Image candidate = *this;
+    candidate.billboardPixels = pixels;
+    candidate.billboardMasks = masks;
+    candidate.billboardFrames = frames;
+    if (!candidate.isBillboard())
+        return false;
+    const size_t count = size_t(frames) * billboardViewCount;
+    for (size_t i = 0; i < count; ++i)
+        if (!pixels[i] || !masks[i])
+            return false;
+    *this = candidate;
+    return true;
 }

@@ -5,6 +5,73 @@
 #include "../engine_config.hpp"
 #include ENGINE_LCD_INCLUDE
 #include <math.h>
+
+static void drawMasked(Draw *draw, float x, float y, float width, float height, const uint8_t *pixels,
+                       const uint8_t *mask, uint16_t sourceWidth, uint16_t sourceHeight)
+{
+    if (!pixels || !mask || !sourceWidth || !sourceHeight || !isfinite(x) || !isfinite(y) ||
+        !isfinite(width) || !isfinite(height) || width <= 0 || height <= 0)
+        return;
+    const Vector screen = draw->getDisplaySize();
+    // Clip in floating point before conversion: near-camera sprites may be huge.
+    const double left = x, top = y, right = left + width, bottom = top + height;
+    const int x0 = int(fmax(0.0, fmin(double(screen.x), ceil(left - 0.5))));
+    const int y0 = int(fmax(0.0, fmin(double(screen.y), ceil(top - 0.5))));
+    const int x1 = int(fmax(0.0, fmin(double(screen.x), ceil(right - 0.5))));
+    const int y1 = int(fmax(0.0, fmin(double(screen.y), ceil(bottom - 0.5))));
+    // Cache exact horizontal sampling once per bounded tile. Do not replace
+    // division with a reciprocal: rounding at texel boundaries changes pixels.
+    // 320 bytes of scratch, independent of projected size; no heap allocation.
+    constexpr int spanCapacity = 64;
+    uint16_t sourceX[spanCapacity];
+    uint16_t colors[spanCapacity];
+    uint8_t runs[spanCapacity];
+    for (int tileX = x0; tileX < x1; tileX += spanCapacity)
+    {
+        const int count = x1 - tileX < spanCapacity ? x1 - tileX : spanCapacity;
+        for (int i = 0; i < count; ++i)
+        {
+            size_t sx = size_t((tileX + i + 0.5 - left) * sourceWidth / width);
+            sourceX[i] = uint16_t(sx < sourceWidth ? sx : sourceWidth - 1);
+        }
+        size_t cachedRow = size_t(-1);
+        int boundaryCount = 0;
+        for (int dy = y0; dy < y1; ++dy)
+        {
+            size_t sy = size_t((dy + 0.5 - top) * sourceHeight / height);
+            if (sy >= sourceHeight)
+                sy = sourceHeight - 1;
+            if (sy != cachedRow)
+            {
+                cachedRow = sy;
+                boundaryCount = 0;
+                const size_t row = sy * sourceWidth;
+                bool inRun = false;
+                for (int i = 0; i <= count; ++i)
+                {
+                    const size_t index = i < count ? row + sourceX[i] : 0;
+                    const bool opaque = i < count && (mask[index >> 3] & (1u << (index & 7)));
+                    if (opaque != inRun)
+                    {
+                        runs[boundaryCount++] = uint8_t(i);
+                        inRun = opaque;
+                    }
+                    if (opaque)
+                        colors[i] = uint16_t(pixels[index * 2]) | (uint16_t(pixels[index * 2 + 1]) << 8);
+                }
+            }
+            // Repeated scaled rows share colors and opaque span boundaries.
+            // Only opaque pixels are passed to the synchronous output hook.
+            for (int run = 0; run < boundaryCount; run += 2)
+            {
+                const int start = runs[run];
+                const int length = runs[run + 1] - start;
+                ENGINE_LCD_BLIT_16BIT(uint16_t(tileX + start), uint16_t(dy), uint16_t(length), 1,
+                                      colors + start);
+            }
+        }
+    }
+}
 #ifdef ENGINE_LOG_INCLUDE
 #include ENGINE_LOG_INCLUDE
 #endif
@@ -427,9 +494,20 @@ void Level::render(Game *game, bool clamp)
         return; // Nothing to render
     }
 
-    // Painter's algorithm (back-to-front) for third-person
-    const bool use_depth_order = (gameCamera->perspective == CAMERA_THIRD_PERSON && entity_count > 0);
-    if (use_depth_order && renderOrder != nullptr && sortOrderChanged(*gameCamera))
+    bool hasBillboards = false;
+    for (int i = 0; i < entity_count; ++i)
+        if (entities[i] && entities[i]->billboard) { hasBillboards = true; break; }
+    if (hasBillboards) cam_last_valid = false; // Rebuild legacy order after the last detach.
+    Camera sortCamera = *gameCamera;
+    if (gameCamera->perspective == CAMERA_FIRST_PERSON && player)
+    {
+        sortCamera.position = player->position;
+        sortCamera.direction = player->direction;
+    }
+    // Preserve existing mesh-only ordering. Mixed scenes sort every frame by
+    // camera depth so lateral distance cannot put a nearer sprite behind one.
+    const bool use_depth_order = hasBillboards || gameCamera->perspective == CAMERA_THIRD_PERSON;
+    if (use_depth_order && renderOrder != nullptr && (hasBillboards || sortOrderChanged(*gameCamera)))
     {
         for (int i = 0; i < entity_count; i++)
             renderOrder[i] = i;
@@ -442,7 +520,10 @@ void Level::render(Game *game, bool clamp)
             {
                 float dx = entities[key_idx]->position.x - gameCamera->position.x;
                 float dy = entities[key_idx]->position.y - gameCamera->position.y;
-                key_dist = dx * dx + dy * dy;
+                key_dist = hasBillboards
+                    ? (entities[key_idx]->position.x - sortCamera.position.x) * sortCamera.direction.x +
+                      (entities[key_idx]->position.y - sortCamera.position.y) * sortCamera.direction.y
+                    : dx * dx + dy * dy;
             }
             int j = i - 1;
             while (j >= 0)
@@ -453,7 +534,10 @@ void Level::render(Game *game, bool clamp)
                 {
                     float dx = entities[cmp_idx]->position.x - gameCamera->position.x;
                     float dy = entities[cmp_idx]->position.y - gameCamera->position.y;
-                    cmp_dist = dx * dx + dy * dy;
+                    cmp_dist = hasBillboards
+                        ? (entities[cmp_idx]->position.x - sortCamera.position.x) * sortCamera.direction.x +
+                          (entities[cmp_idx]->position.y - sortCamera.position.y) * sortCamera.direction.y
+                        : dx * dx + dy * dy;
                 }
                 if (cmp_dist < key_dist)
                 {
@@ -488,10 +572,15 @@ void Level::render(Game *game, bool clamp)
             entityCamera.position = ent->is_player ? ent->position : player->position;
             entityCamera.direction = ent->is_player ? ent->direction : player->direction;
         }
-        if (ent->type != ENTITY_3D_SPRITE && !isOnScreen(ent, entityCamera, screenSize, game->pos))
+        if (!ent->billboard && ent->type != ENTITY_3D_SPRITE && !isOnScreen(ent, entityCamera, screenSize, game->pos))
             continue;
 
         ent->render(game->draw, game);
+        if (ent->billboard)
+        {
+            renderBillboard(ent, game->draw, entityCamera);
+            continue;
+        }
         if (ent->sprite != nullptr)
             ent->sprite->render(game->draw, ent->position.x - game->pos.x,
                                 ent->position.y - game->pos.y);
@@ -741,4 +830,28 @@ void Level::update(Game *game)
             other->collision(ent, game);
         }
     }
+}
+
+void Level::renderBillboard(const Entity *entity, Draw *draw, const Camera &camera)
+{
+    const Image *asset = entity->billboard;
+    if (!asset || !asset->isBillboard() || entity->billboardFrame >= asset->getBillboardFrameCount()) return;
+    Vector anchor;
+    const Vector screen = draw->getDisplaySize();
+    project3DTo2D(Vector(entity->position.x, 0, entity->position.y),
+                  camera.position, camera.direction, camera.height, screen, anchor);
+    if (!(anchor.z > 0.1f) || !isfinite(anchor.z)) return;
+    const uint8_t view = Image::getBillboardView(entity->direction.x, entity->direction.y,
+        camera.position.x - entity->position.x, camera.position.y - entity->position.y);
+    const float scale = entity->sprite_3d ? entity->sprite_3d->getScale() : entity->sprite_scale;
+    if (!isfinite(scale) || scale <= 0)
+        return;
+    const uint8_t *pixels, *mask;
+    if (!asset->getBillboardFrame(entity->billboardFrame, view, pixels, mask))
+        return;
+    const float focal = screen.y;
+    const float width = entity->size.x * scale * focal / anchor.z;
+    const float height = entity->size.y * scale * focal / anchor.z;
+    drawMasked(draw, anchor.x - width * 0.5f, anchor.y - height, width, height,
+               pixels, mask, uint16_t(asset->size.x), uint16_t(asset->size.y));
 }
