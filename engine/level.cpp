@@ -512,23 +512,15 @@ void Level::render(Game *game, bool clamp)
         {
             const float facing = atan2f(entityCamera.position.y - ent->position.y, entityCamera.position.x - ent->position.x)
                                  - atan2f(ent->direction.y, ent->direction.x);
-            const Image *img = ent->billboard->viewForFacing(facing, ent->billboard_pose);
-            if (img && img->getPixels())
+            Image *img = ent->billboard->viewForFacing(facing, ent->billboard_pose);
+            if (img && img->getPixels() && img->mask)
             {
                 int16_t bx, by;
-                if (projectBillboard(entityCamera, ent->position, img->size, screenSize, bx, by))
+                uint16_t bw, bh;
+                if (projectBillboard(entityCamera, ent->position, ent->billboard_world_height, bx, by, bw, bh))
                 {
-                    const uint16_t bw = img->size.x, bh = img->size.y;
-                    if (img->has_mask && img->mask)
-                        game->draw->imageMasked(bx, by, img->getPixels(), bw, bh, img->mask);
-                    else if (bx >= 0 && by >= 0)
-                        game->draw->image(bx, by, img->getPixels(), bw, bh);
-                    else
-                    {
-                        const int sx = bx < 0 ? -bx : 0, sy = by < 0 ? -by : 0;
-                        for (int row = sy; row < bh && by + row < screenSize.y; ++row)
-                            game->draw->image(bx + sx, by + row, img->getPixels() + row * bw + sx, bw - sx, 1);
-                    }
+                    const uint16_t sw = img->size.x, sh = img->size.y;
+                    game->draw->imageMaskedScaled(bx, by, bw, bh, sw, sh, img->getPixels(), img->mask);
                 }
             }
             continue;
@@ -784,19 +776,32 @@ void Level::update(Game *game)
     }
 }
 
-bool Level::projectBillboard(const Camera &camera, const Vector &position, const Vector &imageSize,
-                              const Vector &screenSize, int16_t &x, int16_t &y)
+bool Level::projectBillboard(const Camera &cam, const Vector &epos, float world_height,
+                              int16_t &out_x, int16_t &out_y, uint16_t &out_w, uint16_t &out_h)
 {
-    Vector anchor;
-    project3DTo2D(Vector(position.x, 0, position.y), camera.position, camera.direction,
-                  camera.height, screenSize, anchor);
-    if (!(anchor.z > 0.1f)) return false;
-    const uint16_t width = imageSize.x, height = imageSize.y;
-    const float left = anchor.x - width * 0.5f, top = anchor.y - height;
-    if (!isfinite(left) || !isfinite(top) || left <= -float(width) || top <= -float(height) ||
-        left >= screenSize.x || top >= screenSize.y)
+    const float camA = -cam.direction.y, camB = cam.direction.x;
+    const float wx = epos.x - cam.position.x, wz = epos.y - cam.position.y;
+    const float camera_x = wx * camA + wz * camB;
+    const float camera_z = wx * cam.direction.x + wz * cam.direction.y;
+    if (!(camera_z > 0.1f && camera_z <= 60.0f)) return false;
+
+    const Vector screenSize = gameRef->draw->getDisplaySize();
+    const float scale = screenSize.y / camera_z;
+    const float sx = camera_x * scale + screenSize.x * 0.5f;
+    const float feet = cam.height * scale + screenSize.y * 0.5f;
+    const float top = -(world_height - cam.height) * scale + screenSize.y * 0.5f;
+    const float h = feet - top;
+    float w = world_height * scale;
+    if (!(w >= 1.0f && h >= 1.0f && h <= 65535.0f)) return false;
+    if (w > screenSize.x) w = screenSize.x;
+
+    const float left = sx - w * 0.5f;
+    if (!(left > -w && left < screenSize.x && top > -h && top < screenSize.y &&
+          left >= -32768.0f && left <= 32767.0f && top >= -32768.0f && top <= 32767.0f))
         return false;
-    x = left;
-    y = top;
+    out_x = static_cast<int16_t>(left + (left < 0 ? -0.5f : 0.5f));
+    out_y = static_cast<int16_t>(top + (top < 0 ? -0.5f : 0.5f));
+    out_w = static_cast<uint16_t>(w + 0.5f);
+    out_h = static_cast<uint16_t>(h + 0.5f);
     return true;
 }
