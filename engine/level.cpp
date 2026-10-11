@@ -510,7 +510,27 @@ void Level::render(Game *game, bool clamp)
         ent->render(game->draw, game);
         if (ent->billboard)
         {
-            renderBillboard(ent, game->draw, entityCamera);
+            const float facing = atan2f(entityCamera.position.y - ent->position.y, entityCamera.position.x - ent->position.x)
+                                 - atan2f(ent->direction.y, ent->direction.x);
+            const Image *img = ent->billboard->viewForFacing(facing, ent->billboard_pose);
+            if (img && img->getPixels())
+            {
+                int16_t bx, by;
+                if (projectBillboard(entityCamera, ent->position, img->size, screenSize, bx, by))
+                {
+                    const uint16_t bw = img->size.x, bh = img->size.y;
+                    if (img->has_mask && img->mask)
+                        game->draw->imageMasked(bx, by, img->getPixels(), bw, bh, img->mask);
+                    else if (bx >= 0 && by >= 0)
+                        game->draw->image(bx, by, img->getPixels(), bw, bh);
+                    else
+                    {
+                        const int sx = bx < 0 ? -bx : 0, sy = by < 0 ? -by : 0;
+                        for (int row = sy; row < bh && by + row < screenSize.y; ++row)
+                            game->draw->image(bx + sx, by + row, img->getPixels() + row * bw + sx, bw - sx, 1);
+                    }
+                }
+            }
             continue;
         }
         if (ent->sprite != nullptr)
@@ -764,32 +784,19 @@ void Level::update(Game *game)
     }
 }
 
-void Level::renderBillboard(const Entity *entity, Draw *draw, const Camera &camera)
+bool Level::projectBillboard(const Camera &camera, const Vector &position, const Vector &imageSize,
+                              const Vector &screenSize, int16_t &x, int16_t &y)
 {
-    if (!entity->billboard) return;
-    const float angle = atan2f(camera.position.y - entity->position.y, camera.position.x - entity->position.x)
-                        - atan2f(entity->direction.y, entity->direction.x);
-    const Image *image = entity->billboard->viewForFacing(angle, entity->billboard_pose);
-    if (!image || !image->getPixels()) return;
     Vector anchor;
-    const Vector screen = draw->getDisplaySize();
-    project3DTo2D(Vector(entity->position.x, 0, entity->position.y),
-                  camera.position, camera.direction, camera.height, screen, anchor);
-    if (!(anchor.z > 0.1f)) return;
-    const uint16_t width = image->size.x, height = image->size.y;
+    project3DTo2D(Vector(position.x, 0, position.y), camera.position, camera.direction,
+                  camera.height, screenSize, anchor);
+    if (!(anchor.z > 0.1f)) return false;
+    const uint16_t width = imageSize.x, height = imageSize.y;
     const float left = anchor.x - width * 0.5f, top = anchor.y - height;
     if (!isfinite(left) || !isfinite(top) || left <= -float(width) || top <= -float(height) ||
-        left >= screen.x || top >= screen.y)
-        return;
-    const int16_t x = left, y = top;
-    if (image->has_mask && image->mask)
-        draw->imageMasked(x, y, image->getPixels(), width, height, image->mask);
-    else if (x >= 0 && y >= 0)
-        draw->image(x, y, image->getPixels(), width, height);
-    else
-    {
-        const int sx = x < 0 ? -x : 0, sy = y < 0 ? -y : 0;
-        for (int row = sy; row < height && y + row < screen.y; ++row)
-            draw->image(x + sx, y + row, image->getPixels() + row * width + sx, width - sx, 1);
-    }
+        left >= screenSize.x || top >= screenSize.y)
+        return false;
+    x = left;
+    y = top;
+    return true;
 }

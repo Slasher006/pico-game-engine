@@ -39,7 +39,6 @@ public:
     virtual void render(Game *game, bool clamp = false);
     void render3DSprite(const Sprite3D *sprite3d, Draw *draw, const Vector &player_pos, const Vector &player_dir, float view_height, bool clamp = false, bool drawShadow = false);
     void render3DSprite(const char *path, Draw *draw, const Vector &player_pos, const Vector &player_dir, float view_height, bool clamp = false, bool wireframe = true, bool drawShadow = false);
-    void renderBillboard(const Entity *entity, Draw *draw, const Camera &camera);
     void setClearAllowed(bool status) { clearAllowed = status; }
     void setLightDirection(float x, float y, float z);
     void setShadowColor(uint16_t color) { shadowColor = color; }
@@ -51,6 +50,8 @@ public:
     Vector size;
 
 private:
+    bool projectBillboard(const Camera &camera, const Vector &position, const Vector &imageSize,
+                          const Vector &screenSize, int16_t &x, int16_t &y);
     void drawProjectedTriangle(Draw *draw, const Vector vertices[3], const Vector &screen, uint16_t color, bool wireframe, bool clamp, uint8_t alpha = 255);
     float projectionBound(float value, float maximum);
     int projectionClip(const Vector *input, int count, Vector *output, const Vector &normal, float offset);
