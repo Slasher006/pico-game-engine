@@ -34,8 +34,6 @@ public:
     void image(uint16_t x, uint16_t y, const uint8_t *bitmap, uint16_t width, uint16_t height);                                          // Draws a bitmap on the display at the specified position.
     void image(uint16_t x, uint16_t y, const uint16_t *bitmap, uint16_t width, uint16_t height);                                         // Draws a bitmap on the display at the specified position.
     void imageMasked(int16_t x, int16_t y, const uint8_t *bitmap, uint16_t width, uint16_t height, const uint8_t *mask);
-    void imageMasked(float x, float y, const uint8_t *bitmap, float width, float height, const uint8_t *mask,
-                     uint16_t sourceWidth, uint16_t sourceHeight);
     void line(Vector position, Vector size, uint16_t color = 0x0000);                                                                    // Draws a line on the display at the specified position and size with the specified color.
     void line(uint16_t x1, uint16_t y1, uint16_t x2, uint16_t y2, uint16_t color = 0x0000);                                              // Draws a line on the display at the specified position and size with the specified color.
     void pixel(Vector position, uint16_t color = 0x0000);                                                                                // Draws a pixel on the display at the specified position with the specified color.

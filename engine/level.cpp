@@ -776,9 +776,20 @@ void Level::renderBillboard(const Entity *entity, Draw *draw, const Camera &came
     project3DTo2D(Vector(entity->position.x, 0, entity->position.y),
                   camera.position, camera.direction, camera.height, screen, anchor);
     if (!(anchor.z > 0.1f)) return;
-    const float scale = entity->sprite_3d ? entity->sprite_3d->getScale() : entity->sprite_scale;
-    const float height = entity->billboard_world_height * scale * screen.y / anchor.z;
-    const float width = height * image->size.x / image->size.y;
-    draw->imageMasked(anchor.x - width * 0.5f, anchor.y - height, image->getPixels(), width, height,
-                      image->has_mask ? image->mask : nullptr, uint16_t(image->size.x), uint16_t(image->size.y));
+    const uint16_t width = image->size.x, height = image->size.y;
+    const float left = anchor.x - width * 0.5f, top = anchor.y - height;
+    if (!isfinite(left) || !isfinite(top) || left <= -float(width) || top <= -float(height) ||
+        left >= screen.x || top >= screen.y)
+        return;
+    const int16_t x = left, y = top;
+    if (image->has_mask && image->mask)
+        draw->imageMasked(x, y, image->getPixels(), width, height, image->mask);
+    else if (x >= 0 && y >= 0)
+        draw->image(x, y, image->getPixels(), width, height);
+    else
+    {
+        const int sx = x < 0 ? -x : 0, sy = y < 0 ? -y : 0;
+        for (int row = sy; row < height && y + row < screen.y; ++row)
+            draw->image(x + sx, y + row, image->getPixels() + row * width + sx, width - sx, 1);
+    }
 }
