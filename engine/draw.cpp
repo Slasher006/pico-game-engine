@@ -189,3 +189,13 @@ void Draw::triangle(uint16_t x1, uint16_t y1, uint16_t x2, uint16_t y2, uint16_t
 {
     ENGINE_LCD_TRIANGLE(x1, y1, x2, y2, x3, y3, color);
 }
+void Draw::imageMasked(int16_t x, int16_t y, const uint8_t *bitmap, uint16_t width, uint16_t height, const uint8_t *mask)
+{
+    ENGINE_LCD_BLIT_MASK_BMP(x, y, width, height, bitmap, mask);
+}
+
+void Draw::imageMaskedScaled(int16_t x, int16_t y, uint16_t dst_w, uint16_t dst_h,
+                             uint16_t src_w, uint16_t src_h, const uint8_t *bitmap, const uint8_t *mask)
+{
+    ENGINE_LCD_BLIT_MASK_BMP_SCALED(x, y, dst_w, dst_h, src_w, src_h, bitmap, mask);
+}
