@@ -6,74 +6,6 @@
 #include ENGINE_LCD_INCLUDE
 #include <math.h>
 
-static int billboardEdge(double edge, int limit)
-{
-    if (edge <= 0.5) return 0;
-    if (edge >= double(limit) + 0.5) return limit;
-    const double center = edge - 0.5;
-    const int pixel = int(center);
-    return pixel + (center > pixel);
-}
-
-static void drawMasked(Draw *draw, float x, float y, float width, float height, const uint8_t *pixels,
-                       const uint8_t *mask, uint16_t sourceWidth, uint16_t sourceHeight)
-{
-    if (!pixels || !mask || !sourceWidth || !sourceHeight || !isfinite(x) || !isfinite(y) ||
-        !isfinite(width) || !isfinite(height) || width <= 0 || height <= 0)
-        return;
-    const Vector screen = draw->getDisplaySize();
-    const double left = x, top = y, right = left + width, bottom = top + height;
-    const int x0 = billboardEdge(left, int(screen.x));
-    const int y0 = billboardEdge(top, int(screen.y));
-    const int x1 = billboardEdge(right, int(screen.x));
-    const int y1 = billboardEdge(bottom, int(screen.y));
-    constexpr int spanCapacity = 64;
-    uint16_t sourceX[spanCapacity];
-    uint8_t colors[spanCapacity];
-    uint8_t runs[spanCapacity];
-    for (int tileX = x0; tileX < x1; tileX += spanCapacity)
-    {
-        const int count = x1 - tileX < spanCapacity ? x1 - tileX : spanCapacity;
-        for (int i = 0; i < count; ++i)
-        {
-            size_t sx = size_t((tileX + i + 0.5 - left) * sourceWidth / width);
-            sourceX[i] = uint16_t(sx < sourceWidth ? sx : sourceWidth - 1);
-        }
-        size_t cachedRow = size_t(-1);
-        int boundaryCount = 0;
-        for (int dy = y0; dy < y1; ++dy)
-        {
-            size_t sy = size_t((dy + 0.5 - top) * sourceHeight / height);
-            if (sy >= sourceHeight)
-                sy = sourceHeight - 1;
-            if (sy != cachedRow)
-            {
-                cachedRow = sy;
-                boundaryCount = 0;
-                const size_t row = sy * sourceWidth;
-                bool inRun = false;
-                for (int i = 0; i <= count; ++i)
-                {
-                    const size_t index = i < count ? row + sourceX[i] : 0;
-                    const bool opaque = i < count && (mask[index >> 3] & (1u << (index & 7)));
-                    if (opaque != inRun)
-                    {
-                        runs[boundaryCount++] = uint8_t(i);
-                        inRun = opaque;
-                    }
-                    if (opaque)
-                        colors[i] = pixels[index];
-                }
-            }
-            for (int run = 0; run < boundaryCount; run += 2)
-            {
-                const int start = runs[run];
-                const int length = runs[run + 1] - start;
-                draw->image(uint16_t(tileX + start), uint16_t(dy), colors + start, uint16_t(length), 1);
-            }
-        }
-    }
-}
 #ifdef ENGINE_LOG_INCLUDE
 #include ENGINE_LOG_INCLUDE
 #endif
@@ -834,24 +766,19 @@ void Level::update(Game *game)
 
 void Level::renderBillboard(const Entity *entity, Draw *draw, const Camera &camera)
 {
-    const Image *asset = entity->billboard;
-    const uint8_t *pixels, *mask;
-    if (!asset) return;
+    if (!entity->billboard) return;
+    const float angle = atan2f(camera.position.y - entity->position.y, camera.position.x - entity->position.x)
+                        - atan2f(entity->direction.y, entity->direction.x);
+    const Image *image = entity->billboard->viewForFacing(angle, entity->billboard_pose);
+    if (!image || !image->getPixels()) return;
     Vector anchor;
     const Vector screen = draw->getDisplaySize();
     project3DTo2D(Vector(entity->position.x, 0, entity->position.y),
                   camera.position, camera.direction, camera.height, screen, anchor);
-    if (!(anchor.z > 0.1f) || !isfinite(anchor.z)) return;
-    const uint8_t view = Image::getBillboardView(entity->direction.x, entity->direction.y,
-        camera.position.x - entity->position.x, camera.position.y - entity->position.y);
+    if (!(anchor.z > 0.1f)) return;
     const float scale = entity->sprite_3d ? entity->sprite_3d->getScale() : entity->sprite_scale;
-    if (!isfinite(scale) || scale <= 0)
-        return;
-    if (!asset->getBillboardFrame(entity->billboardFrame, view, pixels, mask))
-        return;
-    const float focal = screen.y;
-    const float width = entity->size.x * scale * focal / anchor.z;
-    const float height = entity->size.y * scale * focal / anchor.z;
-    drawMasked(draw, anchor.x - width * 0.5f, anchor.y - height, width, height,
-               pixels, mask, uint16_t(asset->size.x), uint16_t(asset->size.y));
+    const float height = entity->billboard_world_height * scale * screen.y / anchor.z;
+    const float width = height * image->size.x / image->size.y;
+    draw->imageMasked(anchor.x - width * 0.5f, anchor.y - height, image->getPixels(), width, height,
+                      image->has_mask ? image->mask : nullptr, uint16_t(image->size.x), uint16_t(image->size.y));
 }

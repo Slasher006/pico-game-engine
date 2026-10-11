@@ -349,19 +349,16 @@ void Entity::updateAABB()
     }
     aabb_dirty = false;
 }
-bool Entity::setBillboard(const Image *asset)
+
+void Entity::setBillboard(Billboard *asset, float height)
 {
-    if (asset && (!asset->isBillboard() || !isfinite(size.x) || !isfinite(size.y) || size.x <= 0 || size.y <= 0))
-        return false;
     billboard = asset;
-    billboardFrame = billboardElapsed = 0;
-    return true;
+    billboard_world_height = height;
+    billboard_pose = 0;
 }
 
-void Entity::advanceBillboard(uint32_t elapsedMs, uint32_t frameMs)
+void Entity::setBillboardPose(int pose)
 {
-    if (!billboard || !frameMs || !billboard->isBillboard()) return;
-    const uint64_t elapsed = uint64_t(billboardElapsed) + elapsedMs;
-    billboardFrame = (billboardFrame + elapsed / frameMs) % billboard->getBillboardFrameCount();
-    billboardElapsed = elapsed % frameMs;
+    if (billboard && pose >= 0 && pose < billboard->num_poses)
+        billboard_pose = pose;
 }

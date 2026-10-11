@@ -1,5 +1,6 @@
 #include "draw.hpp"
 #include ENGINE_LCD_INCLUDE
+#include <math.h>
 
 Draw::Draw() : currentFontSize(ENGINE_FONT_DEFAULT), currentTextColor(0x0000)
 {
@@ -188,4 +189,65 @@ void Draw::triangle(Vector p1, Vector p2, Vector p3, uint16_t color)
 void Draw::triangle(uint16_t x1, uint16_t y1, uint16_t x2, uint16_t y2, uint16_t x3, uint16_t y3, uint16_t color)
 {
     ENGINE_LCD_TRIANGLE(x1, y1, x2, y2, x3, y3, color);
+}
+void Draw::imageMasked(int16_t x, int16_t y, const uint8_t *bitmap, uint16_t width, uint16_t height, const uint8_t *mask)
+{
+    ENGINE_LCD_BLIT_MASK_BMP(x, y, width, height, bitmap, mask);
+}
+
+static int imageEdge(double edge, int limit)
+{
+    if (edge <= 0.5) return 0;
+    if (edge >= double(limit) + 0.5) return limit;
+    const double center = edge - 0.5;
+    const int pixel = int(center);
+    return pixel + (center > pixel);
+}
+
+void Draw::imageMasked(float x, float y, const uint8_t *bitmap, float width, float height, const uint8_t *mask,
+                       uint16_t sourceWidth, uint16_t sourceHeight)
+{
+    if (!bitmap || !sourceWidth || !sourceHeight || !isfinite(x) || !isfinite(y) ||
+        !isfinite(width) || !isfinite(height) || width <= 0 || height <= 0)
+        return;
+    const Vector screen = getDisplaySize();
+    const int x0 = imageEdge(x, int(screen.x)), y0 = imageEdge(y, int(screen.y));
+    const int x1 = imageEdge(double(x) + width, int(screen.x)), y1 = imageEdge(double(y) + height, int(screen.y));
+    if (x0 >= x1 || y0 >= y1) return;
+    if (width == sourceWidth && height == sourceHeight && x >= -32768 && x <= 32767 &&
+        y >= -32768 && y <= 32767 && int(x) == x && int(y) == y && mask)
+    {
+        imageMasked(int16_t(x), int16_t(y), bitmap, sourceWidth, sourceHeight, mask);
+        return;
+    }
+    uint8_t pixels[64], bits[8];
+    for (int tile = x0; tile < x1; tile += 64)
+    {
+        const int count = x1 - tile < 64 ? x1 - tile : 64;
+        uint16_t columns[64];
+        for (int i = 0; i < count; ++i)
+        {
+            const size_t sx = size_t((tile + i + 0.5 - double(x)) * sourceWidth / width);
+            columns[i] = uint16_t(sx < sourceWidth ? sx : sourceWidth - 1);
+        }
+        size_t previous = size_t(-1);
+        for (int row = y0; row < y1; ++row)
+        {
+            size_t sy = size_t((row + 0.5 - double(y)) * sourceHeight / height);
+            if (sy >= sourceHeight) sy = sourceHeight - 1;
+            if (sy != previous)
+            {
+                previous = sy;
+                memset(bits, 0, sizeof(bits));
+                for (int i = 0; i < count; ++i)
+                {
+                    const size_t index = sy * sourceWidth + columns[i];
+                    pixels[i] = bitmap[index];
+                    if (!mask || (mask[index >> 3] & (0x80u >> (index & 7))))
+                        bits[i >> 3] |= 0x80u >> (i & 7);
+                }
+            }
+            imageMasked(int16_t(tile), int16_t(row), pixels, uint16_t(count), 1, bits);
+        }
+    }
 }
