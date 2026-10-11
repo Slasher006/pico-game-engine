@@ -14,16 +14,16 @@ bool Billboard::setDirectionPose(int dir, int pose, Image *image)
 {
     if (dir < 0 || dir >= num_dirs || pose < 0 || pose >= num_poses)
         return false;
-    if (image && (!image->getPixels() || !(image->size.x >= 1 && image->size.x <= 1024 &&
-        image->size.y >= 1 && image->size.y <= 1024) ||
-        uint16_t(image->size.x) != image->size.x || uint16_t(image->size.y) != image->size.y))
+    if (image && (!image->getPixels() || !(image->size.x >= 1 && image->size.x <= 1024 && image->size.y >= 1 && image->size.y <= 1024) ||
+                  uint16_t(image->size.x) != image->size.x || uint16_t(image->size.y) != image->size.y))
         return false;
     if (dirs[dir][pose] == image)
         return true;
     if (image)
         for (int d = 0; d < MAX_DIRS; ++d)
             for (int p = 0; p < MAX_POSES; ++p)
-                if (dirs[d][p] == image) return false;
+                if (dirs[d][p] == image)
+                    return false;
     ENGINE_MEM_DELETE dirs[dir][pose];
     dirs[dir][pose] = image;
     return true;
@@ -37,7 +37,8 @@ void Billboard::setCounts(int directions, int poses)
 
 Image *Billboard::viewForFacing(float angle, int pose) const
 {
-    if (!isfinite(angle)) return nullptr;
+    if (!isfinite(angle))
+        return nullptr;
     angle = fmodf(angle, 6.283185307179586f);
     int dir = int(floorf(angle * num_dirs / 6.283185307179586f + 0.5f));
     dir = (dir % num_dirs + num_dirs) % num_dirs;

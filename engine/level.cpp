@@ -430,8 +430,13 @@ void Level::render(Game *game, bool clamp)
 
     bool hasBillboards = false;
     for (int i = 0; i < entity_count; ++i)
-        if (entities[i] && entities[i]->billboard) { hasBillboards = true; break; }
-    if (hasBillboards) cam_last_valid = false;
+        if (entities[i] && entities[i]->billboard)
+        {
+            hasBillboards = true;
+            break;
+        }
+    if (hasBillboards)
+        cam_last_valid = false;
     Camera sortCamera = *gameCamera;
     if (gameCamera->perspective == CAMERA_FIRST_PERSON && player)
     {
@@ -453,9 +458,9 @@ void Level::render(Game *game, bool clamp)
                 float dx = entities[key_idx]->position.x - gameCamera->position.x;
                 float dy = entities[key_idx]->position.y - gameCamera->position.y;
                 key_dist = hasBillboards
-                    ? (entities[key_idx]->position.x - sortCamera.position.x) * sortCamera.direction.x +
-                      (entities[key_idx]->position.y - sortCamera.position.y) * sortCamera.direction.y
-                    : dx * dx + dy * dy;
+                               ? (entities[key_idx]->position.x - sortCamera.position.x) * sortCamera.direction.x +
+                                     (entities[key_idx]->position.y - sortCamera.position.y) * sortCamera.direction.y
+                               : dx * dx + dy * dy;
             }
             int j = i - 1;
             while (j >= 0)
@@ -467,9 +472,9 @@ void Level::render(Game *game, bool clamp)
                     float dx = entities[cmp_idx]->position.x - gameCamera->position.x;
                     float dy = entities[cmp_idx]->position.y - gameCamera->position.y;
                     cmp_dist = hasBillboards
-                        ? (entities[cmp_idx]->position.x - sortCamera.position.x) * sortCamera.direction.x +
-                          (entities[cmp_idx]->position.y - sortCamera.position.y) * sortCamera.direction.y
-                        : dx * dx + dy * dy;
+                                   ? (entities[cmp_idx]->position.x - sortCamera.position.x) * sortCamera.direction.x +
+                                         (entities[cmp_idx]->position.y - sortCamera.position.y) * sortCamera.direction.y
+                                   : dx * dx + dy * dy;
                 }
                 if (cmp_dist < key_dist)
                 {
@@ -510,8 +515,7 @@ void Level::render(Game *game, bool clamp)
         ent->render(game->draw, game);
         if (ent->billboard)
         {
-            const float facing = atan2f(entityCamera.position.y - ent->position.y, entityCamera.position.x - ent->position.x)
-                                 - atan2f(ent->direction.y, ent->direction.x);
+            const float facing = atan2f(entityCamera.position.y - ent->position.y, entityCamera.position.x - ent->position.x) - atan2f(ent->direction.y, ent->direction.x);
             Image *img = ent->billboard->viewForFacing(facing, ent->billboard_pose);
             if (img && img->getPixels() && img->mask)
             {
@@ -520,7 +524,7 @@ void Level::render(Game *game, bool clamp)
                 if (projectBillboard(entityCamera, ent->position, ent->billboard_world_height, bx, by, bw, bh))
                 {
                     const uint16_t sw = img->size.x, sh = img->size.y;
-                    game->draw->imageMaskedScaled(bx, by, bw, bh, sw, sh, img->getPixels(), img->mask);
+                    game->draw->imageMasked(bx, by, bw, bh, sw, sh, img->getPixels(), img->mask);
                 }
             }
             continue;
@@ -777,13 +781,14 @@ void Level::update(Game *game)
 }
 
 bool Level::projectBillboard(const Camera &cam, const Vector &epos, float world_height,
-                              int16_t &out_x, int16_t &out_y, uint16_t &out_w, uint16_t &out_h)
+                             int16_t &out_x, int16_t &out_y, uint16_t &out_w, uint16_t &out_h)
 {
     const float camA = -cam.direction.y, camB = cam.direction.x;
     const float wx = epos.x - cam.position.x, wz = epos.y - cam.position.y;
     const float camera_x = wx * camA + wz * camB;
     const float camera_z = wx * cam.direction.x + wz * cam.direction.y;
-    if (!(camera_z > 0.1f && camera_z <= 60.0f)) return false;
+    if (!(camera_z > 0.1f && camera_z <= 60.0f))
+        return false;
 
     const Vector screenSize = gameRef->draw->getDisplaySize();
     const float scale = screenSize.y / camera_z;
@@ -792,8 +797,10 @@ bool Level::projectBillboard(const Camera &cam, const Vector &epos, float world_
     const float top = -(world_height - cam.height) * scale + screenSize.y * 0.5f;
     const float h = feet - top;
     float w = world_height * scale;
-    if (!(w >= 1.0f && h >= 1.0f && h <= 65535.0f)) return false;
-    if (w > screenSize.x) w = screenSize.x;
+    if (!(w >= 1.0f && h >= 1.0f && h <= 65535.0f))
+        return false;
+    if (w > screenSize.x)
+        w = screenSize.x;
 
     const float left = sx - w * 0.5f;
     if (!(left > -w && left < screenSize.x && top > -h && top < screenSize.y &&
