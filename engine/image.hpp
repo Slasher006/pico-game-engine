@@ -15,8 +15,6 @@ public:
 
     static constexpr uint8_t billboardViewCount = 8;
 
-    // Billboard buffers are borrowed, frame-major then view-major. RGB565 is
-    // little-endian; each view has a ceil(width*height/8) mask, low bit first.
     bool getBillboardFrame(uint32_t frame, uint8_t view, const uint8_t *&pixels,
                           const uint8_t *&mask) const;
     uint32_t getBillboardFrameCount() const { return billboardFrames; }
@@ -27,7 +25,6 @@ public:
     void render(Draw *draw, int16_t x, int16_t y);   // render the image at a given position
 
     bool setBillboard(const uint8_t *mask, uint32_t frames = 1);
-    // One borrowed pixel/mask buffer per frame/view avoids a contiguous atlas.
     bool setBillboardFrames(const uint8_t *const *pixels, const uint8_t *const *masks,
                             uint32_t frames);
 

@@ -6,6 +6,15 @@
 #include ENGINE_LCD_INCLUDE
 #include <math.h>
 
+static int billboardEdge(double edge, int limit)
+{
+    if (edge <= 0.5) return 0;
+    if (edge >= double(limit) + 0.5) return limit;
+    const double center = edge - 0.5;
+    const int pixel = int(center);
+    return pixel + (center > pixel);
+}
+
 static void drawMasked(Draw *draw, float x, float y, float width, float height, const uint8_t *pixels,
                        const uint8_t *mask, uint16_t sourceWidth, uint16_t sourceHeight)
 {
@@ -13,18 +22,14 @@ static void drawMasked(Draw *draw, float x, float y, float width, float height, 
         !isfinite(width) || !isfinite(height) || width <= 0 || height <= 0)
         return;
     const Vector screen = draw->getDisplaySize();
-    // Clip in floating point before conversion: near-camera sprites may be huge.
     const double left = x, top = y, right = left + width, bottom = top + height;
-    const int x0 = int(fmax(0.0, fmin(double(screen.x), ceil(left - 0.5))));
-    const int y0 = int(fmax(0.0, fmin(double(screen.y), ceil(top - 0.5))));
-    const int x1 = int(fmax(0.0, fmin(double(screen.x), ceil(right - 0.5))));
-    const int y1 = int(fmax(0.0, fmin(double(screen.y), ceil(bottom - 0.5))));
-    // Cache exact horizontal sampling once per bounded tile. Do not replace
-    // division with a reciprocal: rounding at texel boundaries changes pixels.
-    // 320 bytes of scratch, independent of projected size; no heap allocation.
+    const int x0 = billboardEdge(left, int(screen.x));
+    const int y0 = billboardEdge(top, int(screen.y));
+    const int x1 = billboardEdge(right, int(screen.x));
+    const int y1 = billboardEdge(bottom, int(screen.y));
     constexpr int spanCapacity = 64;
     uint16_t sourceX[spanCapacity];
-    uint16_t colors[spanCapacity];
+    uint8_t colors[spanCapacity];
     uint8_t runs[spanCapacity];
     for (int tileX = x0; tileX < x1; tileX += spanCapacity)
     {
@@ -57,17 +62,14 @@ static void drawMasked(Draw *draw, float x, float y, float width, float height, 
                         inRun = opaque;
                     }
                     if (opaque)
-                        colors[i] = uint16_t(pixels[index * 2]) | (uint16_t(pixels[index * 2 + 1]) << 8);
+                        colors[i] = pixels[index];
                 }
             }
-            // Repeated scaled rows share colors and opaque span boundaries.
-            // Only opaque pixels are passed to the synchronous output hook.
             for (int run = 0; run < boundaryCount; run += 2)
             {
                 const int start = runs[run];
                 const int length = runs[run + 1] - start;
-                ENGINE_LCD_BLIT_16BIT(uint16_t(tileX + start), uint16_t(dy), uint16_t(length), 1,
-                                      colors + start);
+                draw->image(uint16_t(tileX + start), uint16_t(dy), colors + start, uint16_t(length), 1);
             }
         }
     }
@@ -497,15 +499,13 @@ void Level::render(Game *game, bool clamp)
     bool hasBillboards = false;
     for (int i = 0; i < entity_count; ++i)
         if (entities[i] && entities[i]->billboard) { hasBillboards = true; break; }
-    if (hasBillboards) cam_last_valid = false; // Rebuild legacy order after the last detach.
+    if (hasBillboards) cam_last_valid = false;
     Camera sortCamera = *gameCamera;
     if (gameCamera->perspective == CAMERA_FIRST_PERSON && player)
     {
         sortCamera.position = player->position;
         sortCamera.direction = player->direction;
     }
-    // Preserve existing mesh-only ordering. Mixed scenes sort every frame by
-    // camera depth so lateral distance cannot put a nearer sprite behind one.
     const bool use_depth_order = hasBillboards || gameCamera->perspective == CAMERA_THIRD_PERSON;
     if (use_depth_order && renderOrder != nullptr && (hasBillboards || sortOrderChanged(*gameCamera)))
     {
@@ -835,7 +835,8 @@ void Level::update(Game *game)
 void Level::renderBillboard(const Entity *entity, Draw *draw, const Camera &camera)
 {
     const Image *asset = entity->billboard;
-    if (!asset || !asset->isBillboard() || entity->billboardFrame >= asset->getBillboardFrameCount()) return;
+    const uint8_t *pixels, *mask;
+    if (!asset) return;
     Vector anchor;
     const Vector screen = draw->getDisplaySize();
     project3DTo2D(Vector(entity->position.x, 0, entity->position.y),
@@ -846,7 +847,6 @@ void Level::renderBillboard(const Entity *entity, Draw *draw, const Camera &came
     const float scale = entity->sprite_3d ? entity->sprite_3d->getScale() : entity->sprite_scale;
     if (!isfinite(scale) || scale <= 0)
         return;
-    const uint8_t *pixels, *mask;
     if (!asset->getBillboardFrame(entity->billboardFrame, view, pixels, mask))
         return;
     const float focal = screen.y;

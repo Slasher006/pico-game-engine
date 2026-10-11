@@ -19,7 +19,7 @@ bool Image::getBillboardFrame(uint32_t frame, uint8_t view, const uint8_t *&pixe
         return false;
     const size_t count = size_t(size.x) * size_t(size.y);
     const size_t index = size_t(frame) * billboardViewCount + view;
-    pixels = billboardPixels ? billboardPixels[index] : static_cast<const uint8_t *>(data) + index * count * 2;
+    pixels = billboardPixels ? billboardPixels[index] : static_cast<const uint8_t *>(data) + index * count;
     mask = billboardMasks ? billboardMasks[index] : billboardMask + index * ((count + 7) / 8);
     if (!pixels || !mask)
     {
@@ -69,11 +69,11 @@ bool Image::getData(void *buffer, size_t buffer_size)
 
 bool Image::isBillboard() const
 {
-    if ((!billboardPixels && !data) || is_8bit || (!billboardMasks && !billboardMask) || !billboardFrames ||
-        !isfinite(size.x) || !isfinite(size.y) || size.x < 1 || size.y < 1 ||
-        size.x > 1024 || size.y > 1024 || floorf(size.x) != size.x || floorf(size.y) != size.y)
+    if ((!billboardPixels && !data) || !is_8bit || (!billboardMasks && !billboardMask) || !billboardFrames ||
+        !(size.x >= 1 && size.x <= 1024 && size.y >= 1 && size.y <= 1024) ||
+        uint16_t(size.x) != size.x || uint16_t(size.y) != size.y)
         return false;
-    const size_t frameBytes = size_t(size.x) * size_t(size.y) * 2 * billboardViewCount;
+    const size_t frameBytes = size_t(size.x) * size_t(size.y) * billboardViewCount;
     return billboardFrames <= SIZE_MAX / frameBytes;
 }
 
