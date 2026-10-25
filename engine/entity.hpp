@@ -68,6 +68,7 @@ public:
     bool is_8bit;        // Flag to indicate if the entity uses 8-bit graphics
 
     // 3D Sprite properties
+    bool owns_sprite_3d;       // False when an external owner manages the sprite lifetime.
     Sprite3D *sprite_3d;         // 3D sprite representation (can be null for 2D entities)
     Sprite3DType sprite_3d_type; // Type of 3D sprite
     float sprite_rotation;       // Rotation of the 3D sprite

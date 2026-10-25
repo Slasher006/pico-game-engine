@@ -68,12 +68,41 @@ public:
         return true;
     }
 
+    // Configure before allocating triangles. Platforms may share PSRAM with
+    // other clients without replacing the existing read/write configuration.
+    using Allocate = uint32_t (*)(uint32_t);
+    using Release = void (*)(uint32_t);
+    static bool setAllocator(Allocate allocate, Release release)
+    {
+        if (!allocate || !release) return false;
+        Hooks &h = hooks();
+        if (h.allocate == allocate && h.release == release) return true;
+        if (used()) return false;
+        h.allocate = allocate;
+        h.release = release;
+        return true;
+    }
+
+    static void release(uint32_t address, uint32_t count)
+    {
+        if (address == INVALID || !hooks().release) return;
+        hooks().release(address);
+        const uint32_t bytes = count * (uint32_t)sizeof(Triangle3D);
+        used() = bytes <= used() ? used() - bytes : 0;
+    }
+
     // Reserve `count` contiguous triangles. Returns the base address, or INVALID if PSRAM is full.
     static uint32_t reserve(uint32_t count)
     {
         if (count == 0)
             return INVALID;
 
+        if (count > UINT32_MAX / sizeof(Triangle3D)) return INVALID;
+        if (hooks().allocate) {
+            uint32_t address = hooks().allocate(count * (uint32_t)sizeof(Triangle3D));
+            if (address != INVALID) used() += count * (uint32_t)sizeof(Triangle3D);
+            return address;
+        }
         start();
         uint32_t &n = next();
         const uint32_t current_base = (uint32_t)ENGINE_PSRAM_BASE;
@@ -92,8 +121,10 @@ public:
         return base;
     }
 
+    // Resetting a shared allocator would invalidate other clients' live data.
     static void reset()
     {
+        if (hooks().allocate) return;
         const uint32_t initial_base = start();
         uint32_t &n = next();
         if ((uint32_t)ENGINE_PSRAM_BASE == n)
@@ -114,6 +145,12 @@ public:
     }
 
 private:
+    struct Hooks { Allocate allocate; Release release; };
+    static Hooks &hooks()
+    {
+        static Hooks value = {nullptr, nullptr};
+        return value;
+    }
     uint32_t address;
 
     static uint32_t &start()

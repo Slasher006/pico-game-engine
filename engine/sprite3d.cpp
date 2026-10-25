@@ -35,6 +35,9 @@ Sprite3D::Sprite3D() : active(false), position(Vector(0, 0)), rotation_y(0), sca
 Sprite3D::~Sprite3D()
 {
     clearTriangles();
+#ifdef ENGINE_USE_PSRAM
+    TrianglePSRAM::release(triangles.getAddress(), triangle_capacity);
+#endif
 }
 
 bool Sprite3D::addTriangle(const Triangle3D &triangle)
@@ -718,9 +721,12 @@ bool Sprite3D::reserveTriangles(uint16_t count)
     Triangle3D t;
     for (uint16_t i = 0; i < triangle_count; i++)
     {
-        if (!triangles.at(i).read(t) || !replacement.at(i).set(t))
+        if (!triangles.at(i).read(t) || !replacement.at(i).set(t)) {
+            TrianglePSRAM::release(base, count);
             return false;
+        }
     }
+    TrianglePSRAM::release(triangles.getAddress(), triangle_capacity);
     triangles = replacement;
     triangle_capacity = count;
     return true;

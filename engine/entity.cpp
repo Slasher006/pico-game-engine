@@ -68,6 +68,7 @@ Entity::Entity(
 
     // Initialize 3D sprite properties
     this->sprite_3d = nullptr;
+    this->owns_sprite_3d = true;
     this->sprite_3d_type = sprite_3d_type;
     this->sprite_rotation = 0.0f;
     this->sprite_scale = 1.0f;
@@ -115,6 +116,7 @@ void Entity::create3DSprite(Sprite3DType type, float height, float width, float 
     // Clean up any existing sprite first
     destroy3DSprite();
 
+    owns_sprite_3d = true;
     sprite_3d_type = type;
     sprite_rotation = rotation;
 
@@ -152,7 +154,7 @@ void Entity::destroy3DSprite()
 {
     if (sprite_3d != nullptr)
     {
-        ENGINE_MEM_DELETE sprite_3d;
+        if (owns_sprite_3d) ENGINE_MEM_DELETE sprite_3d;
         sprite_3d = nullptr;
     }
     sprite_3d_type = SPRITE_3D_NONE;
