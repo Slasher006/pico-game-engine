@@ -78,7 +78,7 @@ struct Level::DepthBuffer
             return 65535;
         return uint16_t(compact - bias);
     }
-    void finish(int y, int left, int right, Draw *draw)
+    void finish(int y, int left, int right, Draw *draw, bool textured, uint16_t tint)
     {
         write(y, left, right - left + 1);
         for (int x = left; x <= right;)
@@ -89,7 +89,12 @@ struct Level::DepthBuffer
             while (x <= right && covered[x])
                 ++x;
             if (x > start)
-                draw->image(start, y, colors + start, x - start, 1);
+            {
+                if (textured)
+                    draw->image(start, y, colors + start, x - start, 1);
+                else
+                    draw->fillRectangle(start, y, x - start, 1, tint);
+            }
         }
     }
 
@@ -138,6 +143,7 @@ struct Level::DepthBuffer
     void triangle(const Vector vertices[3], const float uv[6], uint16_t tint, const uint16_t *texture,
                   uint16_t tw, uint16_t th, Draw *draw)
     {
+        const bool textured = texture && tw && th;
         float minY = height, maxY = 0;
         for (int i = 0; i < 3; ++i)
         {
@@ -200,7 +206,7 @@ struct Level::DepthBuffer
                 if (z <= scratch[x])
                     continue;
                 uint16_t color = tint;
-                if (texture && tw && th)
+                if (textured)
                 {
                     const float f = (x + .5f - ends[0].x) / span;
                     const float u = endsUv[0] + f * (endsUv[2] - endsUv[0]),
@@ -212,7 +218,8 @@ struct Level::DepthBuffer
                     color = uint16_t(((r * ((tint >> 11) & 31) / 31) << 11) |
                                      ((g * ((tint >> 5) & 63) / 63) << 5) | (b * (tint & 31) / 31));
                 }
-                colors[x] = color;
+                if (textured)
+                    colors[x] = color;
                 scratch[x] = z;
                 covered[x] = 1;
                 if (firstChanged > x)
@@ -222,7 +229,7 @@ struct Level::DepthBuffer
             // Occluded ends retain their old depth. Transfer only the interval
             // containing accepted pixels, including any holes between them.
             if (firstChanged <= lastChanged)
-                finish(y, firstChanged, lastChanged, draw);
+                finish(y, firstChanged, lastChanged, draw, textured, tint);
         }
     }
 };
