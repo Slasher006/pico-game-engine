@@ -191,7 +191,7 @@ struct Level::DepthBuffer
                 continue;
             read(y, left, right - left + 1);
             memset(covered + left, 0, right - left + 1);
-            bool changed = false;
+            int firstChanged = right + 1, lastChanged = left - 1;
             const float inverseStep = (ends[1].z - ends[0].z) / span;
             float inverse = ends[0].z + (left + .5f - ends[0].x) * inverseStep;
             for (int x = left; x <= right; ++x, inverse += inverseStep)
@@ -215,10 +215,14 @@ struct Level::DepthBuffer
                 colors[x] = color;
                 scratch[x] = z;
                 covered[x] = 1;
-                changed = true;
+                if (firstChanged > x)
+                    firstChanged = x;
+                lastChanged = x;
             }
-            if (changed)
-                finish(y, left, right, draw);
+            // Occluded ends retain their old depth. Transfer only the interval
+            // containing accepted pixels, including any holes between them.
+            if (firstChanged <= lastChanged)
+                finish(y, firstChanged, lastChanged, draw);
         }
     }
 };
