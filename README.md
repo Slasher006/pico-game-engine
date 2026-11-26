@@ -174,8 +174,9 @@ shadows are not supported in this path. Texture UV interpolation remains affine.
 The buffer needs two bytes per display pixel (204,800 bytes at 320x320), stored
 in the shared triangle PSRAM arena on PSRAM builds and in heap memory otherwise.
 Scanline scratch needs five bytes per display column (1,600 bytes at 320 pixels).
-Depth is quantized to 1/256 world unit and saturates at approximately 256 units;
-keep the rendered world within that range. Allocate a level matching the display
+Depth stores compact inverse distance with 11 mantissa bits (less than 0.05%
+relative quantization), avoiding a reciprocal per pixel. The normal 0.1 through
+256-unit world range fits without saturation. Allocate a level matching the display
 size. Disabling the option or clearing the level releases its ownership.
 
 Run the shared-depth regression with:

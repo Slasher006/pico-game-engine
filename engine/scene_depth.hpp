@@ -4,7 +4,7 @@
 #include "triangle_psram.hpp"
 #endif
 
-// Opt-in opaque scene depth. 1/256-unit depth in PSRAM on supported boards;
+// Opt-in opaque scene depth. Compact inverse depth in PSRAM on supported boards;
 // only scanline scratch stays in the internal heap. All world draws share it.
 class SceneDepth {
     uint16_t width=0, height=0;
@@ -27,7 +27,19 @@ class SceneDepth {
         memcpy(depth+y*width+x,scratch+x,2*n);
 #endif
     }
-    static uint16_t encode(float z) { return uint16_t(fminf(65534,fmaxf(0,z*256))); }
+    // Positive float ordering is preserved with 11 mantissa bits and five
+    // exponent bits. Avoid a reciprocal and two libm clamps for every pixel.
+    // Normal game depths (near plane 0.1 through 256 units) fit without clamping.
+    static uint16_t encodeInverse(float inverse) {
+        if (!(inverse > 0)) return 0;
+        uint32_t bits;
+        static_assert(sizeof(bits) == sizeof(inverse), "32-bit float required");
+        memcpy(&bits, &inverse, sizeof(bits));
+        const uint32_t compact = bits >> 12, bias = 110u << 11;
+        if (compact <= bias) return 1;
+        if (compact >= bias + 65535) return 65535;
+        return uint16_t(compact - bias);
+    }
     template<class Blit> void finish(int y,int left,int right,Blit blit) {
         write(y,left,right-left+1);
         for(int x=left;x<=right;) {
@@ -64,7 +76,7 @@ public:
         width=w;height=h;return true;
     }
     void clear() {
-        memset(scratch,255,width*2);
+        memset(scratch,0,width*2);
         for(int y=0;y<height;++y) write(y,0,width);
     }
     template<class Blit>
@@ -88,14 +100,14 @@ public:
             if(right<left) continue;
             read(y,left,right-left+1);memset(covered+left,0,right-left+1);
             bool changed=false;
-            for(int x=left;x<=right;++x) {
-                const float f=(x+.5f-ends[0].x)/span;
-                const float inverse=ends[0].z+f*(ends[1].z-ends[0].z);
-                if(!(inverse>0)) continue;
-                const uint16_t z=encode(1/inverse);
-                if(z>=scratch[x]) continue;
+            const float inverseStep=(ends[1].z-ends[0].z)/span;
+            float inverse=ends[0].z+(left+.5f-ends[0].x)*inverseStep;
+            for(int x=left;x<=right;++x,inverse+=inverseStep) {
+                const uint16_t z=encodeInverse(inverse);
+                if(z<=scratch[x]) continue;
                 uint16_t color=t.tint;
                 if(texture && tw && th) {
+                    const float f=(x+.5f-ends[0].x)/span;
                     const float u=ends[0].u+f*(ends[1].u-ends[0].u),v=ends[0].v+f*(ends[1].v-ends[0].v);
                     const int tx=int(fmaxf(0,fminf(tw-1,u*tw))),ty=int(fmaxf(0,fminf(th-1,v*th)));
                     const uint16_t texel=texture[ty*tw+tx];
@@ -114,13 +126,13 @@ public:
         const int left=bx<0?0:bx,right=bx+bw>width?width:bx+bw;
         const int top=by<0?0:by,bottom=by+bh>height?height:by+bh;
         if(left>=right || top>=bottom) return;
-        const uint16_t z=encode(distance);
+        const uint16_t z=encodeInverse(1/distance);
         for(int y=top;y<bottom;++y) {
             read(y,left,right-left);memset(covered+left,0,right-left);bool changed=false;
             const int sy=(y-by)*sh/bh;
             for(int x=left;x<right;++x) {
                 const int i=sy*sw+(x-bx)*sw/bw;
-                if(!(mask[i>>3]&(0x80>>(i&7))) || z>=scratch[x]) continue;
+                if(!(mask[i>>3]&(0x80>>(i&7))) || z<=scratch[x]) continue;
                 const unsigned p=pixels[i];
                 colors[x]=uint16_t((((p>>5)*31/7)<<11)|((((p>>2)&7)*63/7)<<5)|((p&3)*31/3));
                 scratch[x]=z;covered[x]=1;changed=true;

@@ -40,5 +40,20 @@ int main() {
         s.clear();std::fill(screen.begin(),screen.end(),0);
         rect(20,10,44,38,8,0x1234,false);assert(screen[24*W+32]==0x1234);
     } while(std::next_permutation(order,order+4));
-    printf("SCENE_DEPTH_PASS %d reference pixels, 24 draw orders, partial occlusion, front mesh, masked sprite, reset, allocation failures\n",checked);
+    // Two intersecting depth planes, with no pixel center on their intersection.
+    // The expected winner comes from the planes, independently of depth encoding.
+    for(int reverse=0;reverse<2;++reverse) {
+        SceneDepth s;assert(s.init(W,H));s.clear();std::vector<uint16_t> screen(W*H,0);
+        auto blit=[&](int x,int y,const uint16_t *p,int n) {std::copy(p,p+n,screen.begin()+y*W+x);};
+        for(int j=0;j<2;++j) {
+            const int id=j^reverse;
+            const float l=id?.264f:.2f,r=id?.2f:.264f;
+            const uint16_t color=id?0xf800:0x001f;
+            T a={{{0,0,l,0,0},{W,0,r,0,0},{W,H,r,0,0}},color,0,H-1};
+            T b={{{0,0,l,0,0},{W,H,r,0,0},{0,H,l,0,0}},color,0,H-1};
+            s.triangle(a,nullptr,0,0,blit);s.triangle(b,nullptr,0,0,blit);
+        }
+        for(int y=0;y<H;++y)for(int x=0;x<W;++x)assert(screen[y*W+x]==(x<32?0xf800:0x001f));
+    }
+    printf("SCENE_DEPTH_PASS %d reference pixels, 24 draw orders, partial occlusion, front mesh, masked sprite, reset, allocation failures; 6144 crossing-plane pixels\n",checked);
 }
