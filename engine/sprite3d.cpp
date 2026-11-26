@@ -28,7 +28,7 @@ Sprite3D::Sprite3D(bool usePsram) : active(false), position(Vector(0, 0)), psram
 #ifdef ENGINE_USE_PSRAM
                                     psramRetained(false),
 #endif
-                                    rotation_y(0), scale_factor(1.0f), depthSortEnabled(false),
+                                    rotation_y(0), rotationCos(1.0f), rotationSin(0.0f), scale_factor(1.0f), depthSortEnabled(false),
                                     triangle_capacity(0), triangle_count(0), triangles(nullptr),
                                     triangleUvs(nullptr), uvTriangleCount(0), textureData(nullptr),
                                     texturePsramAddress(0xFFFFFFFFu), textureWidth(0), textureHeight(0),
@@ -78,8 +78,8 @@ bool Sprite3D::bakeTransform()
     if (rotation_y == 0.0f && scale_factor == 1.0f)
         return true;
 
-    const float cos_a = cosf(rotation_y);
-    const float sin_a = sinf(rotation_y);
+    const float cos_a = rotationCos;
+    const float sin_a = rotationSin;
 
     Triangle3D t;
     for (uint16_t i = 0; i < triangle_count; i++)
@@ -111,7 +111,7 @@ bool Sprite3D::bakeTransform()
             return false;
     }
 
-    rotation_y = 0.0f;
+    setRotation(0.0f);
     scale_factor = 1.0f;
     return true;
 }
@@ -771,8 +771,8 @@ bool Sprite3D::getWorldTriangle(uint16_t index, Triangle3D &out) const
         return true;
     }
 
-    const float cos_a = cosf(rotation_y);
-    const float sin_a = sinf(rotation_y);
+    const float cos_a = rotationCos;
+    const float sin_a = rotationSin;
     transformVertex(out.x1, out.y1, out.z1, cos_a, sin_a, out.x1, out.y1, out.z1);
     transformVertex(out.x2, out.y2, out.z2, cos_a, sin_a, out.x2, out.y2, out.z2);
     transformVertex(out.x3, out.y3, out.z3, cos_a, sin_a, out.x3, out.y3, out.z3);
@@ -819,7 +819,7 @@ bool Sprite3D::getTransformedTriangle(uint16_t index, const Vector &camera_pos, 
 bool Sprite3D::initializeAsHouse(Vector pos, float width, float height, float rot, uint16_t color, bool wireframe)
 {
     position = pos;
-    rotation_y = rot;
+    setRotation(rot);
     clearTriangles();
     type = SPRITE_HOUSE;
     active = true;
@@ -829,7 +829,7 @@ bool Sprite3D::initializeAsHouse(Vector pos, float width, float height, float ro
 bool Sprite3D::initializeAsHumanoid(Vector pos, float height, float rot, uint16_t color, bool wireframe)
 {
     position = pos;
-    rotation_y = rot;
+    setRotation(rot);
     clearTriangles();
     type = SPRITE_HUMANOID;
     active = true;
@@ -839,7 +839,7 @@ bool Sprite3D::initializeAsHumanoid(Vector pos, float height, float rot, uint16_
 bool Sprite3D::initializeAsPillar(Vector pos, float height, float radius, uint16_t color, bool wireframe)
 {
     position = pos;
-    rotation_y = 0;
+    setRotation(0.0f);
     clearTriangles();
     type = SPRITE_PILLAR;
     active = true;
@@ -849,7 +849,7 @@ bool Sprite3D::initializeAsPillar(Vector pos, float height, float radius, uint16
 bool Sprite3D::initializeAsTree(Vector pos, float height, uint16_t color, bool wireframe)
 {
     position = pos;
-    rotation_y = 0;
+    setRotation(0.0f);
     clearTriangles();
     type = SPRITE_TREE;
     active = true;

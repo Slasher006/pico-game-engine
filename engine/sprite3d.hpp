@@ -38,6 +38,9 @@ private:
     bool psramRetained;
 #endif
     float rotation_y;
+    // Reused by sorting, rendering and baking; updated by setRotation().
+    float rotationCos;
+    float rotationSin;
     float scale_factor;
     bool depthSortEnabled;
     uint16_t triangle_capacity;
@@ -107,7 +110,12 @@ public:
     bool reserveTriangles(uint16_t count);
     void setActive(bool state) { active = state; }
     void setPosition(Vector pos) { position = pos; }
-    void setRotation(float rot) { rotation_y = rot; }
+    void setRotation(float rot)
+    {
+        rotation_y = rot;
+        rotationCos = cosf(rot);
+        rotationSin = sinf(rot);
+    }
     void setScale(float scale) { scale_factor = scale; }
     void setDepthSortEnabled(bool enabled) { depthSortEnabled = enabled; }
     void setWireframe(bool wireframe);
