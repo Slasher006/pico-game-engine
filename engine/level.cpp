@@ -6,6 +6,7 @@
 #include ENGINE_LCD_INCLUDE
 #include <math.h>
 #include "mesh_visibility.hpp"
+#include "scene_depth.hpp"
 
 #ifdef ENGINE_LOG_INCLUDE
 #include ENGINE_LOG_INCLUDE
@@ -16,6 +17,7 @@ Level::Level()
     : name(""),
       size(Vector(0, 0)),
       meshVisibility(nullptr),
+      sceneDepth(nullptr),
       clearAllowed(true),
       gameRef(nullptr),
       entity_count(0),
@@ -38,6 +40,7 @@ Level::Level(const char *name, const Vector &size, Game *game, CallbackLevel sta
     : name(name),
       size(size),
       meshVisibility(nullptr),
+      sceneDepth(nullptr),
       clearAllowed(true),
       gameRef(game),
       entity_count(0),
@@ -89,6 +92,8 @@ void Level::clear()
     ENGINE_MEM_FREE(spriteTriangleDepths);
     spriteTriangleDepths = nullptr;
     spriteTriangleCapacity = 0;
+    ENGINE_MEM_DELETE sceneDepth;
+    sceneDepth = nullptr;
     ENGINE_MEM_DELETE meshVisibility;
     meshVisibility = nullptr;
 }
@@ -502,6 +507,7 @@ int Level::projectionProject(const Vector triangle[3], float width, float height
 // Render all active entities
 void Level::render(Game *game, bool clamp)
 {
+    if(sceneDepth) sceneDepth->clear();
     // clear the screen and render the entities
     if (clearAllowed)
     {
@@ -644,7 +650,18 @@ void Level::render(Game *game, bool clamp)
                 uint16_t bw, bh;
                 if (projectBillboard(entityCamera, ent->position, ent->billboard_world_height, bx, by, bw, bh))
                 {
-                    img->renderMasked(game->draw, bx, by, bw, bh);
+                    if(!sceneDepth) img->renderMasked(game->draw, bx, by, bw, bh);
+                    else {
+                        const size_t n=img->getDataSize(),m=img->getMaskSize();
+                        uint8_t *data=static_cast<uint8_t *>(ENGINE_MEM_MALLOC(n+m));
+                        if(data && img->getData(data,n) && img->getMask(data+n,m)) {
+                            const float distance=(ent->position.x-entityCamera.position.x)*entityCamera.direction.x+
+                                                 (ent->position.y-entityCamera.position.y)*entityCamera.direction.y;
+                            sceneDepth->billboard(bx,by,bw,bh,distance,int(img->size.x),int(img->size.y),data,data+n,
+                                [game](int x,int y,const uint16_t *pixels,int w) {game->draw->image(x,y,pixels,w,1);});
+                        }
+                        ENGINE_MEM_FREE(data);
+                    }
                 }
             }
             continue;
@@ -853,6 +870,11 @@ void Level::render3DSprite(const Sprite3D *sprite3d, Draw *draw, const Vector &p
         }
     }
 #endif
+    if(sceneDepth) {
+        renderSceneSprite(sprite3d,draw,player_pos,player_dir,view_height,texture,texture_width,texture_height);
+        ENGINE_MEM_FREE(texture_buffer);
+        return;
+    }
     // Opaque textured meshes need per-pixel visibility: sorting triangle centers
     // cannot hide a rear support behind a long foreground triangle.
     if (sprite3d->isDepthSortEnabled() && texture && !doShadow &&
@@ -1098,4 +1120,35 @@ bool Level::projectBillboard(const Camera &cam, const Vector &epos, float world_
     out_w = static_cast<uint16_t>(w + 0.5f);
     out_h = static_cast<uint16_t>(h + 0.5f);
     return true;
+}
+
+
+bool Level::setSceneDepthEnabled(bool enabled) {
+    if(!enabled) {ENGINE_MEM_DELETE sceneDepth;sceneDepth=nullptr;return true;}
+    if(sceneDepth) return true;
+    if(size.x<1 || size.y<1 || size.x>2048 || size.y>2048) return false;
+    SceneDepth *buffer=ENGINE_MEM_NEW SceneDepth();
+    if(!buffer || !buffer->init(uint16_t(size.x),uint16_t(size.y))) {ENGINE_MEM_DELETE buffer;return false;}
+    sceneDepth=buffer;return true;
+}
+
+void Level::renderSceneSprite(const Sprite3D *sprite,Draw *draw,const Vector &position,
+                             const Vector &direction,float height,const uint16_t *texture,
+                             uint16_t tw,uint16_t th) {
+    const Vector screen=draw->getDisplaySize();
+    for(uint16_t i=0;i<sprite->getTriangleCount();++i) {
+        Triangle3D t;float uv[6]={};
+        if(!sprite->getTransformedTriangle(i,position,t,height)) continue;
+        const bool textured=texture && sprite->getTriangleUVs(i,uv);
+        const float xs[3]={t.x1,t.x2,t.x3},ys[3]={t.y1,t.y2,t.y3},zs[3]={t.z1,t.z2,t.z3};
+        MeshVisibility::Vertex v[3];
+        for(int j=0;j<3;++j) {
+            const float x=xs[j]-position.x,z=zs[j]-position.y;
+            v[j]={-x*direction.y+z*direction.x,ys[j]-height,x*direction.x+z*direction.y,uv[j*2],uv[j*2+1]};
+        }
+        MeshVisibility::Triangle projected[2];
+        const int n=MeshVisibility::project(v,t.color,uint16_t(screen.x),uint16_t(screen.y),projected);
+        for(int j=0;j<n;++j) sceneDepth->triangle(projected[j],textured?texture:nullptr,tw,th,
+            [draw](int x,int y,const uint16_t *pixels,int w) {draw->image(x,y,pixels,w,1);});
+    }
 }

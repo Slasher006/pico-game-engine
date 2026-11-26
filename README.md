@@ -151,6 +151,44 @@ c++ -std=c++11 -O1 -g -fsanitize=address,undefined tests/mesh_visibility.cpp -o 
 /tmp/mesh-visibility-test
 ```
 
+#### Shared scene depth
+
+For filled opaque worlds containing separate meshes and billboard props, enable
+shared depth on the level before rendering:
+
+```cpp
+if (!level->setSceneDepthEnabled(true)) {
+    // Report insufficient render-buffer memory during game startup.
+}
+```
+
+This is disabled by default. When enabled, flat and textured Sprite3D triangles
+and opaque pixels of masked RGB332 billboards share a depth buffer, reset at the
+start of each `Level::render`. Buildings therefore hide cars and props regardless
+of entity order, while exposed portions remain visible. Custom render callbacks
+must draw world meshes through this level's `render3DSprite`; direct framebuffer
+and 2D drawing do not participate. Draw the sky/background before world geometry.
+This mode renders filled opaque geometry; wireframe outlines and projected
+shadows are not supported in this path. Texture UV interpolation remains affine.
+
+The buffer needs two bytes per display pixel (204,800 bytes at 320x320), stored
+in the shared triangle PSRAM arena on PSRAM builds and in heap memory otherwise.
+Scanline scratch needs five bytes per display column (1,600 bytes at 320 pixels).
+Depth is quantized to 1/256 world unit and saturates at approximately 256 units;
+keep the rendered world within that range. Allocate a level matching the display
+size. Disabling the option or clearing the level releases its ownership.
+
+Run the shared-depth regression with:
+
+```sh
+c++ -std=c++11 -Wall -Wextra -Werror -pedantic -fsanitize=address,undefined tests/scene_depth.cpp -o /tmp/scene-depth-test
+/tmp/scene-depth-test
+```
+
+It compares 73,728 reference pixels over all 24 orders of a wall, partly hidden
+mesh, foreground textured mesh and masked sprite, and checks frame reset and
+allocation failures.
+
 #### `Camera`
 Controls the 3D view. Supports `CAMERA_FIRST_PERSON` and `CAMERA_THIRD_PERSON` perspectives.
 

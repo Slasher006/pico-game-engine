@@ -12,6 +12,7 @@ class Game;
 class Sprite3D;
 class Entity;
 class MeshVisibility;
+class SceneDepth;
 
 class Level
 {
@@ -40,6 +41,7 @@ public:
     virtual void render(Game *game, bool clamp = false);
     void render3DSprite(const Sprite3D *sprite3d, Draw *draw, const Vector &player_pos, const Vector &player_dir, float view_height, bool clamp = false, bool drawShadow = false);
     void render3DSprite(const char *path, Draw *draw, const Vector &player_pos, const Vector &player_dir, float view_height, bool clamp = false, bool wireframe = true, bool drawShadow = false);
+    bool setSceneDepthEnabled(bool enabled);
     void setClearAllowed(bool status) { clearAllowed = status; }
     void setLightDirection(float x, float y, float z);
     void setGame(Game *game) { gameRef = game; }
@@ -62,6 +64,8 @@ private:
                                  const Vector &direction, float height, const uint16_t *texture,
                                  uint16_t textureWidth, uint16_t textureHeight);
     MeshVisibility *meshVisibility;
+    SceneDepth *sceneDepth;
+    void renderSceneSprite(const Sprite3D *, Draw *, const Vector &, const Vector &, float, const uint16_t *, uint16_t, uint16_t);
     float projectionBound(float value, float maximum);
     int projectionClip(const Vector *input, int count, Vector *output, const Vector &normal, float offset);
     float projectionDistance(const Vector &vertex, const Vector &normal, float offset);
